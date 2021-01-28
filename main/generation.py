@@ -67,5 +67,36 @@ def get_matrix_mean(model, loader, device, feature_list, num_classes):
         group_lasso.fit(X.cpu().numpy())
         temp_precision = group_lasso.precision_
         temp_precision = torch.from_numpy(temp_precision).float().cuda()
-        print("temp_precision_size: ", temp_precision.size())
+
         precision.append(temp_precision)
+
+    return sample_class_mean, precision
+
+
+def get_mahalanobis_score(
+    model, loader, layer_index, cls_mean, precision, num_classes, device
+):
+    mahalanobis_score = []
+    model.eval()
+    torch.backends.cudnn.benchmark = True
+    torch.set_grad_enabled(False)
+
+    for images, labels in loader:
+        images, labels = images.to(device), labels.to(device)
+        out_features = model.feature_list(images)[layer_index]
+        out_features = out_features.view(out_features.size(0), out_features.size(1), -1)
+        out_features = torch.mean(out_features, 2)
+
+        # compute Mahalanobis score
+        gaussian_score = 0
+        for i in range(num_classes):
+            batch_sample_mean = cls_mean[layer_index][i]
+            zero_f = out_features.data - batch_sample_mean
+            term_gau = (
+                -0.5
+                * torch.mm(torch.mm(zero_f, precision[layer_index]), zero_f.t()).diag()
+            )
+            if i == 0:
+                gaussian_score = term_gau.view(-1, 1)
+            else:
+                gaussian_score = torch.cat((gaussian_score, term_gau.view(-1, 1)), 1)

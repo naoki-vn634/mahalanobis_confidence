@@ -1,4 +1,5 @@
 import argparse
+import generation
 import json
 import os
 import sys
@@ -13,8 +14,6 @@ from preprocess import CowDataset, ImageTransform
 
 sys.path.append("../models/")
 from model import CustomDensenet
-
-from generation import get_matrix_mean
 
 
 def make_dataloader(path, label, transforms):
@@ -33,13 +32,13 @@ def main():
     std = (0.229, 0.224, 0.225)
     transforms = ImageTransform(mean, std)
 
-    with open(args.input, "r") as f:
+    with open(args.train, "r") as f:
         db = json.load(f)
 
     train_path = db["train"]["path"]
     train_label = db["train"]["label"]
-
     train_dataloader = make_dataloader(train_path, train_label, transforms)
+
     model = CustomDensenet(num_classes=args.n_cls)
     model.to(device)
     model.load_state_dict(torch.load(args.weight))
@@ -57,17 +56,22 @@ def main():
         feature_list[count] = out.size(1)
         count += 1
 
-    # get covariance metrix and mean
-    get_matrix_mean(model, train_dataloader, device, feature_list, args.n_cls)
+    # get covariance metrix and mean from training data
+    cls_mean, precision = generation.get_matrix_mean(
+        model, train_dataloader, device, feature_list, args.n_cls
+    )
+
+    # get mahalanobis scores of validation data
+    for i in range(num_output):
+        mahalanobis_score = generation.get_mahalanobis_score(
+            model, val_dataloader, i, cls_mean, precision, args.n_cls, device
+        )
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--input",
-        type=str,
-        default="/mnt/aoni02/matsunaga/Dataset/global_crowd_201129/test_kubota",
-    )
+    parser.add_argument("--train", type=str)
+    parser.add_argument("--val", type=str)
     parser.add_argument("--n_cls", type=int, default=3)
     parser.add_argument("--weight", type=str)
     parser.add_argument("--output", type=str)
