@@ -20,9 +20,9 @@ def get_matrix_mean(model, loader, device, feature_list, num_classes):
             temp_list.append(0)
         list_features.append(temp_list)
 
-    for images, labels in loader:
+    for ind, (images, labels) in loader:
         images, labels = images.to(device), labels.to(device)
-        out_features = model.feature_list(images)
+        out_features, output = model.feature_list(images)
 
         for i in range(num_output):
             out_features[i] = out_features[i].view(
@@ -76,16 +76,23 @@ def get_matrix_mean(model, loader, device, feature_list, num_classes):
 def get_mahalanobis_score(
     model, loader, layer_index, cls_mean, precision, num_classes, device
 ):
-    mahalanobis_score = []
+    raw_mahalanobis_score = []
     model.eval()
     torch.backends.cudnn.benchmark = True
     torch.set_grad_enabled(False)
+    correct_count = 0
 
-    for images, labels in loader:
+    for ind, (images, labels) in enumerate(loader):
         images, labels = images.to(device), labels.to(device)
-        out_features = model.feature_list(images)[layer_index]
+        outputs = model.feature_list(images)
+        out_features = outputs[0][layer_index]
+        output = outputs[1]
         out_features = out_features.view(out_features.size(0), out_features.size(1), -1)
         out_features = torch.mean(out_features, 2)
+        _, preds = torch.max(output, 1)
+
+        y_true = labels if ind == 0 else torch.cat([y_true, labels], 0)
+        y_pred = preds if ind == 0 else torch.cat([y_pred, preds], 0)
 
         # compute Mahalanobis score
         gaussian_score = 0
@@ -100,3 +107,22 @@ def get_mahalanobis_score(
                 gaussian_score = term_gau.view(-1, 1)
             else:
                 gaussian_score = torch.cat((gaussian_score, term_gau.view(-1, 1)), 1)
+
+        raw_score, _ = torch.max(gaussian_score, dim=1)
+        raw_mahalanobis_score.extend(raw_score)
+        sample_pred = gaussian_score.max(1)[1]
+        correct_count += int(torch.sum(sample_pred == labels))
+
+        # Input Processing
+
+        # batch_sample_mean = cls_mean[layer_index].index_select(0, sample_pred)
+        # zero_f = out_features - batch_sample_mean
+        # pure_gau = (
+        #     -0.5 * torch.mm(torch.mm(zero_f, precision[layer_index]), zero_f.t()).diag()
+        # )
+        # print(gaussian_score.size())
+
+        # print(pure_gau)
+    accuracy = correct_count / len(loader.dataset)
+    print(f"Over all Accuracy: {accuracy:.3f}")
+    return raw_mahalanobis_score, [y_true, y_pred]
