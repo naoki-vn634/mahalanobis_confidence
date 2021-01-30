@@ -64,7 +64,21 @@ class CustomDensenet(nn.Module):
         # out_list.append(out)
         # out = F.avg_pool2d(out, 8)
         # out = out.view(-1, self.in_planes)
+        # out = self.densenet.0.conv0(x)
+        # out = self.densenet.0.pool0(self.densenet.0.relu0(self.0.norm0(out)))
+        # out = self.densenet.0.transition1(self.densenet.0.denseblock1(out))
+        # out = self.densenet.0.transition2(self.densenet.0.denseblock2(out))
+        # out = self.densenet.0.transition3(self.densenet.0.denseblock3(out))
+        # out = self.densenet.0.denseblock4(out)
+        # out = self.densenet.0.norm5(out)
+        # out = self.relu(self.fc1(self.avg(out)))
+        # out = self.fc2(self.dr1(out))
+
         out = self.densenet(x)
         out_list.append(out)
+        h = self.avg(out)
+        h_middle = h.view(len(h), -1)
+        h = self.dr1(self.relu(self.fc1(h_middle)))
+        y = self.fc2(h)
 
-        return out_list
+        return out_list, y

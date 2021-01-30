@@ -8,7 +8,7 @@ import torch
 import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
-
+from sklearn.metrics import classification_report, confusion_matrix
 from distutils.util import strtobool
 from glob import glob
 
@@ -56,12 +56,13 @@ def main():
     model = CustomDensenet(num_classes=args.n_cls)
     model.to(device)
     model.load_state_dict(torch.load(args.weight))
+    # print(model)
 
     model.eval()
     torch.set_grad_enabled(False)
     temp_x = torch.rand(2, 3, 224, 224).cuda()
 
-    temp_list, _ = model.feature_list(temp_x)
+    temp_list, layers_list, _ = model.feature_list(temp_x)
 
     num_output = len(temp_list)
     feature_list = np.empty(num_output)
@@ -87,23 +88,40 @@ def main():
 
     # get mahalanobis scores of validation data
     for i in range(num_output):
-        scores, result = generation.get_mahalanobis_score(
+        num_features = layers_list[i]
+        scores, labels, preds, preds_mah = generation.get_mahalanobis_score(
             model, val_dataloader, i, cls_mean, precision, args.n_cls, device
         )
 
-    wrong_score, correct_score = [], []
-    for score, label, pred in zip(scores, result[0], result[1]):
-        if label != pred:
-            wrong_score.append(score)
-        else:
-            correct_score.append(score)
+        if args.concat:
+            labels[np.where(labels == 2)[0]] = 0
+            preds[np.where(preds == 2)[0]] = 0
+            preds_mah[np.where(preds_mah == 2)[0]] = 0
 
-    plt.figure()
-    sns.distplot(wrong_score, label="wrong")
-    sns.distplot(correct_score, label="correct")
-    plt.legend()
-    plt.xlabel("mahalanobis score")
-    plt.savefig(os.path.join(args.output, "mahalanobis_score.png"))
+        print(len(np.where(preds != preds_mah)[0]))
+
+        confmat = confusion_matrix(labels, preds)
+        print("mahalanobis_detector_matrix")
+        print(confmat)
+        count = 0
+        wrong_score, correct_score = [], []
+        for score, label, pred in zip(scores, labels, preds):
+            if label != pred:
+                wrong_score.append(score)
+            else:
+                correct_score.append(score)
+        print(count)
+        plt.figure()
+        sns.distplot(wrong_score, label="wrong")
+        sns.distplot(correct_score, label="correct")
+        plt.legend()
+        plt.xlabel("mahalanobis score")
+        plt.savefig(
+            os.path.join(
+                args.output,
+                f"feature_{num_features}*{num_features}_mahalanobis_score_mah.png",
+            )
+        )
 
 
 if __name__ == "__main__":
