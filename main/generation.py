@@ -20,9 +20,9 @@ def get_matrix_mean(model, loader, device, feature_list, num_classes):
             temp_list.append(0)
         list_features.append(temp_list)
 
-    for ind, (images, labels) in loader:
+    for ind, (images, labels) in enumerate(loader):
         images, labels = images.to(device), labels.to(device)
-        out_features, output = model.feature_list(images)
+        out_features,_, output = model.feature_list(images)
 
         for i in range(num_output):
             out_features[i] = out_features[i].view(
@@ -86,7 +86,7 @@ def get_mahalanobis_score(
         images, labels = images.to(device), labels.to(device)
         outputs = model.feature_list(images)
         out_features = outputs[0][layer_index]
-        output = outputs[1]
+        output = outputs[2]
         out_features = out_features.view(out_features.size(0), out_features.size(1), -1)
         out_features = torch.mean(out_features, 2)
         _, preds = torch.max(output, 1)
@@ -112,6 +112,9 @@ def get_mahalanobis_score(
         raw_mahalanobis_score.extend(raw_score)
         sample_pred = gaussian_score.max(1)[1]
         correct_count += int(torch.sum(sample_pred == labels))
+        y_mahalanobis_pred = (
+            sample_pred if ind == 0 else torch.cat([y_mahalanobis_pred, sample_pred], 0)
+        )
 
         # Input Processing
 
@@ -125,4 +128,7 @@ def get_mahalanobis_score(
         # print(pure_gau)
     accuracy = correct_count / len(loader.dataset)
     print(f"Over all Accuracy: {accuracy:.3f}")
-    return raw_mahalanobis_score, [y_true, y_pred]
+    y_true = y_true.cpu().data.numpy()
+    y_pred = y_pred.cpu().data.numpy()
+    y_mahalanobis_pred = y_mahalanobis_pred.cpu().data.numpy()
+    return raw_mahalanobis_score, y_true, y_pred, y_mahalanobis_pred
